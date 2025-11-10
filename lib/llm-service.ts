@@ -3,21 +3,36 @@
 import OpenAI from 'openai';
 import { LLMParams } from './types';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization of OpenAI client
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!openaiClient) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY is not set in environment variables');
+    }
+
+    // Validate it's not a placeholder
+    if (process.env.OPENAI_API_KEY.includes('your_openai') || process.env.OPENAI_API_KEY.includes('placeholder')) {
+      throw new Error('OPENAI_API_KEY appears to be a placeholder. Please set your actual API key.');
+    }
+
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 export class LLMService {
   /**
    * Generate a response using OpenAI API
    */
   static async generate(prompt: string, params: LLMParams): Promise<string> {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is not set in environment variables');
-    }
+    const client = getOpenAIClient();
 
     try {
-      const response = await openai.chat.completions.create({
+      const response = await client.chat.completions.create({
         model: params.model || 'gpt-4o-mini',
         messages: [
           {
@@ -62,4 +77,3 @@ export class LLMService {
     return Math.ceil(text.length / 4);
   }
 }
-

@@ -4,15 +4,36 @@ import { createClient } from '@vercel/postgres';
 import { Experiment, Response, ExperimentRow, ResponseRow, CreateResponseInput, QualityMetrics } from './types';
 import { MetricsCalculator } from './metrics-calculator';
 
-// Create a client instance for pooled connections
-const db = createClient();
+// Lazy initialization of database client
+let db: ReturnType<typeof createClient> | null = null;
+
+function getDb() {
+  if (!db) {
+    // Check for required environment variable
+    if (!process.env.POSTGRES_URL) {
+      throw new Error('POSTGRES_URL environment variable is not set. Please check your .env.local file.');
+    }
+
+    // Validate it's not a placeholder
+    if (process.env.POSTGRES_URL.includes('your_postgres') || process.env.POSTGRES_URL.includes('placeholder')) {
+      throw new Error(
+        'POSTGRES_URL appears to be a placeholder. Please set the actual connection string from Vercel dashboard.'
+      );
+    }
+
+    // createClient() automatically reads from POSTGRES_URL env var
+    // But we explicitly ensure we're using the pooled connection
+    db = createClient();
+  }
+  return db;
+}
 
 export class StorageService {
   /**
    * Create a new experiment
    */
   static async createExperiment(prompt: string): Promise<Experiment> {
-    const result = await db.sql<ExperimentRow>`
+    const result = await getDb().sql<ExperimentRow>`
       INSERT INTO experiments (prompt)
       VALUES (${prompt})
       RETURNING *
@@ -26,7 +47,7 @@ export class StorageService {
    * Get a single experiment by ID
    */
   static async getExperiment(id: string): Promise<Experiment | null> {
-    const result = await db.sql<ExperimentRow>`
+    const result = await getDb().sql<ExperimentRow>`
       SELECT * FROM experiments
       WHERE id = ${id}
     `;
@@ -48,7 +69,7 @@ export class StorageService {
    * Get all experiments
    */
   static async getAllExperiments(): Promise<Experiment[]> {
-    const result = await db.sql<ExperimentRow>`
+    const result = await getDb().sql<ExperimentRow>`
       SELECT * FROM experiments
       ORDER BY created_at DESC
     `;
@@ -60,7 +81,7 @@ export class StorageService {
    * Get all responses for an experiment
    */
   static async getExperimentResponses(experimentId: string, prompt?: string): Promise<Response[]> {
-    const result = await db.sql<ResponseRow>`
+    const result = await getDb().sql<ResponseRow>`
       SELECT * FROM responses
       WHERE experiment_id = ${experimentId}
       ORDER BY created_at ASC
@@ -76,7 +97,7 @@ export class StorageService {
   static async createResponse(input: CreateResponseInput): Promise<Response> {
     const { experimentId, temperature, topP, responseText, metrics, responseTimeMs, tokenCount } = input;
 
-    const result = await db.sql<ResponseRow>`
+    const result = await getDb().sql<ResponseRow>`
       INSERT INTO responses (
         experiment_id,
         temperature,

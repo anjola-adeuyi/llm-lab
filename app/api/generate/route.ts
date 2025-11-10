@@ -26,39 +26,32 @@ export async function POST(request: NextRequest) {
   const experimentStartTime = Date.now();
 
   try {
-    const body: GenerateRequest = await request.json();
+    let body: GenerateRequest;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+    }
     const { prompt, parameterRanges } = body;
 
     // Input validation
     if (!prompt || prompt.length < 10) {
-      return NextResponse.json(
-        { error: 'Prompt must be at least 10 characters' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Prompt must be at least 10 characters' }, { status: 400 });
     }
 
     if (!parameterRanges?.temperature || !parameterRanges?.topP) {
-      return NextResponse.json(
-        { error: 'Parameter ranges for temperature and topP are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Parameter ranges for temperature and topP are required' }, { status: 400 });
     }
 
     if (parameterRanges.temperature.length === 0 || parameterRanges.topP.length === 0) {
-      return NextResponse.json(
-        { error: 'At least one value must be provided for each parameter' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'At least one value must be provided for each parameter' }, { status: 400 });
     }
 
     // Create experiment record
     const experiment = await StorageService.createExperiment(prompt);
 
     // Generate all parameter combinations
-    const combinations = generateCombinations(
-      parameterRanges.temperature,
-      parameterRanges.topP
-    );
+    const combinations = generateCombinations(parameterRanges.temperature, parameterRanges.topP);
 
     // Parallel LLM calls with error handling
     const responses = await Promise.allSettled(
@@ -97,7 +90,10 @@ export async function POST(request: NextRequest) {
     // Log errors for debugging
     const errors = responses.filter((r) => r.status === 'rejected');
     if (errors.length > 0) {
-      console.error('Some LLM calls failed:', errors.map((e) => (e as PromiseRejectedResult).reason));
+      console.error(
+        'Some LLM calls failed:',
+        errors.map((e) => (e as PromiseRejectedResult).reason)
+      );
     }
 
     // Return results
@@ -114,10 +110,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('Generate API error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to generate responses' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || 'Failed to generate responses' }, { status: 500 });
   }
 }
-
