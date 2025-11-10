@@ -24,6 +24,11 @@ export async function GET() {
         success: false,
         error: error.message,
         stack: error.stack,
+        envCheck: {
+          hasDatabaseUrl: !!process.env.DATABASE_URL,
+          hasPostgresUrl: !!process.env.POSTGRES_URL,
+          databaseUrlPreview: process.env.DATABASE_URL?.substring(0, 30) || 'not set',
+        },
       },
       { status: 500 }
     );

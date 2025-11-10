@@ -1,31 +1,40 @@
 // lib/storage-service.ts
 
-import { createClient } from '@vercel/postgres';
+import { neon } from '@neondatabase/serverless';
 import { Experiment, Response, ExperimentRow, ResponseRow, CreateResponseInput, QualityMetrics } from './types';
 import { MetricsCalculator } from './metrics-calculator';
 
 // Lazy initialization of database client
-let db: ReturnType<typeof createClient> | null = null;
+let sql: ReturnType<typeof neon> | null = null;
 
 function getDb() {
-  if (!db) {
-    // Check for required environment variable
-    if (!process.env.POSTGRES_URL) {
-      throw new Error('POSTGRES_URL environment variable is not set. Please check your .env.local file.');
-    }
+  if (!sql) {
+    console.log('[Storage Service] Initializing database client...');
+    // Check for required environment variable (Neon uses DATABASE_URL)
+    const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
-    // Validate it's not a placeholder
-    if (process.env.POSTGRES_URL.includes('your_postgres') || process.env.POSTGRES_URL.includes('placeholder')) {
+    if (!connectionString) {
       throw new Error(
-        'POSTGRES_URL appears to be a placeholder. Please set the actual connection string from Vercel dashboard.'
+        'DATABASE_URL or POSTGRES_URL environment variable is not set. Please check your .env.local file.'
       );
     }
 
-    // createClient() automatically reads from POSTGRES_URL env var
-    // But we explicitly ensure we're using the pooled connection
-    db = createClient();
+    // Validate it's not a placeholder
+    if (connectionString.includes('your_postgres') || connectionString.includes('placeholder')) {
+      throw new Error(
+        'DATABASE_URL appears to be a placeholder. Please set the actual connection string from Vercel dashboard.'
+      );
+    }
+
+    console.log(
+      '[Storage Service] Creating Neon database client with connection string:',
+      connectionString.substring(0, 30) + '...'
+    );
+    // Neon uses the neon() function with connection string
+    sql = neon(connectionString);
+    console.log('[Storage Service] Database client created successfully');
   }
-  return db;
+  return sql;
 }
 
 export class StorageService {
@@ -33,30 +42,39 @@ export class StorageService {
    * Create a new experiment
    */
   static async createExperiment(prompt: string): Promise<Experiment> {
-    const result = await getDb().sql<ExperimentRow>`
-      INSERT INTO experiments (prompt)
-      VALUES (${prompt})
-      RETURNING *
-    `;
+    console.log('[Storage Service] Creating experiment...');
+    try {
+      const sql = getDb();
+      const result = await sql<ExperimentRow>`
+        INSERT INTO experiments (prompt)
+        VALUES (${prompt})
+        RETURNING *
+      `;
 
-    const row = result.rows[0];
-    return this.mapExperimentRow(row);
+      const row = result[0];
+      console.log('[Storage Service] Experiment created:', row.id);
+      return this.mapExperimentRow(row);
+    } catch (error: any) {
+      console.error('[Storage Service] Error creating experiment:', error.message);
+      throw error;
+    }
   }
 
   /**
    * Get a single experiment by ID
    */
   static async getExperiment(id: string): Promise<Experiment | null> {
-    const result = await getDb().sql<ExperimentRow>`
+    const sql = getDb();
+    const result = await sql<ExperimentRow>`
       SELECT * FROM experiments
       WHERE id = ${id}
     `;
 
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       return null;
     }
 
-    const experiment = this.mapExperimentRow(result.rows[0]);
+    const experiment = this.mapExperimentRow(result[0]);
 
     // Fetch responses for this experiment (pass prompt for details recalculation)
     const responses = await this.getExperimentResponses(id, experiment.prompt);
@@ -69,26 +87,28 @@ export class StorageService {
    * Get all experiments
    */
   static async getAllExperiments(): Promise<Experiment[]> {
-    const result = await getDb().sql<ExperimentRow>`
+    const sql = getDb();
+    const result = await sql<ExperimentRow>`
       SELECT * FROM experiments
       ORDER BY created_at DESC
     `;
 
-    return result.rows.map((row) => this.mapExperimentRow(row));
+    return result.map((row) => this.mapExperimentRow(row));
   }
 
   /**
    * Get all responses for an experiment
    */
   static async getExperimentResponses(experimentId: string, prompt?: string): Promise<Response[]> {
-    const result = await getDb().sql<ResponseRow>`
+    const sql = getDb();
+    const result = await sql<ResponseRow>`
       SELECT * FROM responses
       WHERE experiment_id = ${experimentId}
       ORDER BY created_at ASC
     `;
 
     // If we have the prompt, we can recalculate details
-    return result.rows.map((row) => this.mapResponseRow(row, prompt));
+    return result.map((row) => this.mapResponseRow(row, prompt));
   }
 
   /**
@@ -97,37 +117,45 @@ export class StorageService {
   static async createResponse(input: CreateResponseInput): Promise<Response> {
     const { experimentId, temperature, topP, responseText, metrics, responseTimeMs, tokenCount } = input;
 
-    const result = await getDb().sql<ResponseRow>`
-      INSERT INTO responses (
-        experiment_id,
-        temperature,
-        top_p,
-        model,
-        response_text,
-        coherence_score,
-        completeness_score,
-        structural_score,
-        overall_score,
-        response_time_ms,
-        token_count
-      )
-      VALUES (
-        ${experimentId},
-        ${temperature},
-        ${topP},
-        'gpt-4o-mini',
-        ${responseText},
-        ${metrics.coherence},
-        ${metrics.completeness},
-        ${metrics.structural},
-        ${metrics.overall},
-        ${responseTimeMs},
-        ${tokenCount}
-      )
-      RETURNING *
-    `;
+    console.log(`[Storage Service] Creating response for experiment ${experimentId}...`);
+    try {
+      const sql = getDb();
+      const result = await sql<ResponseRow>`
+        INSERT INTO responses (
+          experiment_id,
+          temperature,
+          top_p,
+          model,
+          response_text,
+          coherence_score,
+          completeness_score,
+          structural_score,
+          overall_score,
+          response_time_ms,
+          token_count
+        )
+        VALUES (
+          ${experimentId},
+          ${temperature},
+          ${topP},
+          'gpt-4o-mini',
+          ${responseText},
+          ${metrics.coherence},
+          ${metrics.completeness},
+          ${metrics.structural},
+          ${metrics.overall},
+          ${responseTimeMs},
+          ${tokenCount}
+        )
+        RETURNING *
+      `;
 
-    return this.mapResponseRow(result.rows[0]);
+      console.log(`[Storage Service] Response created: ${result[0].id}`);
+      return this.mapResponseRow(result[0]);
+    } catch (error: any) {
+      console.error('[Storage Service] Error creating response:', error.message);
+      throw error;
+    }
   }
 
   /**
