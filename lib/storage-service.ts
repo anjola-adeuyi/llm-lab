@@ -45,17 +45,18 @@ export class StorageService {
     console.log('[Storage Service] Creating experiment...');
     try {
       const sql = getDb();
-      const result = await sql<ExperimentRow>`
+      const result = (await sql`
         INSERT INTO experiments (prompt)
         VALUES (${prompt})
         RETURNING *
-      `;
+      `) as ExperimentRow[];
 
       const row = result[0];
       console.log('[Storage Service] Experiment created:', row.id);
       return this.mapExperimentRow(row);
-    } catch (error: any) {
-      console.error('[Storage Service] Error creating experiment:', error.message);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[Storage Service] Error creating experiment:', errorMessage);
       throw error;
     }
   }
@@ -65,10 +66,10 @@ export class StorageService {
    */
   static async getExperiment(id: string): Promise<Experiment | null> {
     const sql = getDb();
-    const result = await sql<ExperimentRow>`
+    const result = (await sql`
       SELECT * FROM experiments
       WHERE id = ${id}
-    `;
+    `) as ExperimentRow[];
 
     if (result.length === 0) {
       return null;
@@ -88,10 +89,10 @@ export class StorageService {
    */
   static async getAllExperiments(): Promise<Experiment[]> {
     const sql = getDb();
-    const result = await sql<ExperimentRow>`
+    const result = (await sql`
       SELECT * FROM experiments
       ORDER BY created_at DESC
-    `;
+    `) as ExperimentRow[];
 
     return result.map((row) => this.mapExperimentRow(row));
   }
@@ -101,11 +102,11 @@ export class StorageService {
    */
   static async getExperimentResponses(experimentId: string, prompt?: string): Promise<Response[]> {
     const sql = getDb();
-    const result = await sql<ResponseRow>`
+    const result = (await sql`
       SELECT * FROM responses
       WHERE experiment_id = ${experimentId}
       ORDER BY created_at ASC
-    `;
+    `) as ResponseRow[];
 
     // If we have the prompt, we can recalculate details
     return result.map((row) => this.mapResponseRow(row, prompt));
@@ -120,7 +121,7 @@ export class StorageService {
     console.log(`[Storage Service] Creating response for experiment ${experimentId}...`);
     try {
       const sql = getDb();
-      const result = await sql<ResponseRow>`
+      const result = (await sql`
         INSERT INTO responses (
           experiment_id,
           temperature,
@@ -148,12 +149,13 @@ export class StorageService {
           ${tokenCount}
         )
         RETURNING *
-      `;
+      `) as ResponseRow[];
 
       console.log(`[Storage Service] Response created: ${result[0].id}`);
       return this.mapResponseRow(result[0]);
-    } catch (error: any) {
-      console.error('[Storage Service] Error creating response:', error.message);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[Storage Service] Error creating response:', errorMessage);
       throw error;
     }
   }
