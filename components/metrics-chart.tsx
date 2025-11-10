@@ -37,29 +37,29 @@ export function MetricsChart({ responses }: MetricsChartProps) {
   const avgMetrics =
     responses.length > 0
       ? {
-          coherence: responses.reduce((sum, r) => sum + r.metrics.coherence, 0) / responses.length,
-          completeness: responses.reduce((sum, r) => sum + r.metrics.completeness, 0) / responses.length,
-          structural: responses.reduce((sum, r) => sum + r.metrics.structural, 0) / responses.length,
+          coherence: responses.reduce((sum, r) => sum + (r.metrics.coherence || 0), 0) / responses.length,
+          completeness: responses.reduce((sum, r) => sum + (r.metrics.completeness || 0), 0) / responses.length,
+          structural: responses.reduce((sum, r) => sum + (r.metrics.structural || 0), 0) / responses.length,
         }
       : { coherence: 0, completeness: 0, structural: 0 };
 
   const radarChartData = [
     {
       metric: 'Coherence',
-      value: Math.round(avgMetrics.coherence),
+      value: Math.max(0, Math.min(100, Math.round(avgMetrics.coherence) || 0)),
       fullMark: 100,
     },
     {
       metric: 'Completeness',
-      value: Math.round(avgMetrics.completeness),
+      value: Math.max(0, Math.min(100, Math.round(avgMetrics.completeness) || 0)),
       fullMark: 100,
     },
     {
       metric: 'Structural',
-      value: Math.round(avgMetrics.structural),
+      value: Math.max(0, Math.min(100, Math.round(avgMetrics.structural) || 0)),
       fullMark: 100,
     },
-  ];
+  ].filter((item) => !isNaN(item.value) && isFinite(item.value)); // Filter out NaN and Infinity values
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -124,7 +124,14 @@ export function MetricsChart({ responses }: MetricsChartProps) {
                 fill="#8884d8"
                 fillOpacity={0.6}
               />
-              <Tooltip />
+              <Tooltip
+                formatter={(value: any) => {
+                  if (value == null) return '0';
+                  const numValue = typeof value === 'number' ? value : parseFloat(String(value));
+                  if (isNaN(numValue) || !isFinite(numValue)) return '0';
+                  return numValue.toString();
+                }}
+              />
             </RadarChart>
           </ResponsiveContainer>
         </CardContent>

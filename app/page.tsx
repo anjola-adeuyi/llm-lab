@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { ExperimentForm } from '@/components/experiment-form';
 import { Toast, useToast } from '@/components/toast';
+import { LoadingOverlay } from '@/components/loading-overlay';
 import { GenerateRequest } from '@/lib/types';
 
 export default function HomePage() {
@@ -43,34 +44,37 @@ export default function HomePage() {
   });
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">LLM Lab</h1>
-        <p className="text-muted-foreground">Experiment with LLM parameters and compare response quality metrics</p>
-      </div>
+    <>
+      <LoadingOverlay isLoading={mutation.isPending} />
+      <div className="container mx-auto py-8 px-4 max-w-4xl">
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold mb-2">LLM Lab</h1>
+          <p className="text-muted-foreground">Experiment with LLM parameters and compare response quality metrics</p>
+        </div>
 
-      <ExperimentForm
-        onSubmit={(data) => mutation.mutate(data)}
-        isLoading={mutation.isPending}
-      />
-
-      <div className="mt-8">
-        <a
-          href="/experiments"
-          className="text-primary hover:underline"
-          aria-label="View all experiments"
-        >
-          View all experiments →
-        </a>
-      </div>
-
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={hideToast}
+        <ExperimentForm
+          onSubmit={(data) => mutation.mutate(data)}
+          isLoading={mutation.isPending}
         />
-      )}
-    </div>
+
+        <div className="mt-8">
+          <a
+            href="/experiments"
+            className="text-primary hover:underline"
+            aria-label="View all experiments"
+          >
+            View all experiments →
+          </a>
+        </div>
+
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={hideToast}
+          />
+        )}
+      </div>
+    </>
   );
 }

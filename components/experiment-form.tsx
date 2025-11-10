@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GenerateRequest } from '@/lib/types';
+import { Loader2 } from 'lucide-react';
 
 interface ExperimentFormProps {
   onSubmit: (data: GenerateRequest) => void;
@@ -107,8 +108,16 @@ export function ExperimentForm({ onSubmit, isLoading = false }: ExperimentFormPr
           <Button
             type="submit"
             disabled={isLoading || !prompt.trim()}
+            className="w-full md:w-auto cursor-pointer transition-all hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:hover:scale-100 bg-amber-500"
           >
-            {isLoading ? 'Generating...' : 'Generate Responses'}
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              'Generate Responses'
+            )}
           </Button>
         </form>
       </CardContent>
