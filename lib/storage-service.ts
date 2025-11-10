@@ -1,22 +1,18 @@
 // lib/storage-service.ts
 
-import { sql } from '@vercel/postgres';
-import {
-  Experiment,
-  Response,
-  ExperimentRow,
-  ResponseRow,
-  CreateResponseInput,
-  QualityMetrics,
-} from './types';
+import { createClient } from '@vercel/postgres';
+import { Experiment, Response, ExperimentRow, ResponseRow, CreateResponseInput, QualityMetrics } from './types';
 import { MetricsCalculator } from './metrics-calculator';
+
+// Create a client instance for pooled connections
+const db = createClient();
 
 export class StorageService {
   /**
    * Create a new experiment
    */
   static async createExperiment(prompt: string): Promise<Experiment> {
-    const result = await sql<ExperimentRow>`
+    const result = await db.sql<ExperimentRow>`
       INSERT INTO experiments (prompt)
       VALUES (${prompt})
       RETURNING *
@@ -30,7 +26,7 @@ export class StorageService {
    * Get a single experiment by ID
    */
   static async getExperiment(id: string): Promise<Experiment | null> {
-    const result = await sql<ExperimentRow>`
+    const result = await db.sql<ExperimentRow>`
       SELECT * FROM experiments
       WHERE id = ${id}
     `;
@@ -52,7 +48,7 @@ export class StorageService {
    * Get all experiments
    */
   static async getAllExperiments(): Promise<Experiment[]> {
-    const result = await sql<ExperimentRow>`
+    const result = await db.sql<ExperimentRow>`
       SELECT * FROM experiments
       ORDER BY created_at DESC
     `;
@@ -64,7 +60,7 @@ export class StorageService {
    * Get all responses for an experiment
    */
   static async getExperimentResponses(experimentId: string, prompt?: string): Promise<Response[]> {
-    const result = await sql<ResponseRow>`
+    const result = await db.sql<ResponseRow>`
       SELECT * FROM responses
       WHERE experiment_id = ${experimentId}
       ORDER BY created_at ASC
@@ -78,17 +74,9 @@ export class StorageService {
    * Create a new response
    */
   static async createResponse(input: CreateResponseInput): Promise<Response> {
-    const {
-      experimentId,
-      temperature,
-      topP,
-      responseText,
-      metrics,
-      responseTimeMs,
-      tokenCount,
-    } = input;
+    const { experimentId, temperature, topP, responseText, metrics, responseTimeMs, tokenCount } = input;
 
-    const result = await sql<ResponseRow>`
+    const result = await db.sql<ResponseRow>`
       INSERT INTO responses (
         experiment_id,
         temperature,
@@ -169,4 +157,3 @@ export class StorageService {
     };
   }
 }
-
