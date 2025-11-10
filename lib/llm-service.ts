@@ -31,6 +31,12 @@ export class LLMService {
   static async generate(prompt: string, params: LLMParams): Promise<string> {
     const client = getOpenAIClient();
 
+    console.log(
+      `[LLM Service] Generating with model=${params.model || 'gpt-4o-mini'}, temp=${params.temperature}, topP=${
+        params.topP
+      }`
+    );
+
     try {
       const response = await client.chat.completions.create({
         model: params.model || 'gpt-4o-mini',
@@ -45,13 +51,23 @@ export class LLMService {
         max_tokens: 1000,
       });
 
+      console.log(`[LLM Service] API response received, choices: ${response.choices.length}`);
+
       const content = response.choices[0]?.message?.content;
       if (!content) {
         throw new Error('No content returned from OpenAI API');
       }
 
+      console.log(`[LLM Service] Content length: ${content.length} characters`);
       return content;
     } catch (error: any) {
+      console.error('[LLM Service] Error details:', {
+        message: error.message,
+        status: error.status,
+        code: error.code,
+        type: error.type,
+      });
+
       // Handle rate limit errors
       if (error.status === 429) {
         throw new Error('OpenAI API rate limit exceeded. Please try again later.');
@@ -60,6 +76,11 @@ export class LLMService {
       // Handle authentication errors
       if (error.status === 401) {
         throw new Error('Invalid OpenAI API key. Please check your environment variables.');
+      }
+
+      // Handle network/timeout errors
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+        throw new Error('Failed to connect to OpenAI API. Please check your internet connection.');
       }
 
       // Handle other errors

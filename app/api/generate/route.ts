@@ -6,6 +6,10 @@ import { MetricsCalculator } from '@/lib/metrics-calculator';
 import { StorageService } from '@/lib/storage-service';
 import { GenerateRequest, GenerateResponse } from '@/lib/types';
 
+// Increase timeout for long-running requests (up to 5 minutes)
+export const maxDuration = 300; // 5 minutes in seconds
+export const dynamic = 'force-dynamic';
+
 /**
  * Helper to generate parameter combinations
  */
@@ -25,11 +29,18 @@ function calculateAverageScore(responses: any[]) {
 export async function POST(request: NextRequest) {
   const experimentStartTime = Date.now();
 
+  console.log('[Generate API] Request received');
+
   try {
     let body: GenerateRequest;
     try {
       body = await request.json();
+      console.log('[Generate API] Request body parsed:', {
+        prompt: body.prompt?.substring(0, 50),
+        parameterRanges: body.parameterRanges,
+      });
     } catch (parseError) {
+      console.error('[Generate API] JSON parse error:', parseError);
       return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
     }
     const { prompt, parameterRanges } = body;
@@ -47,38 +58,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'At least one value must be provided for each parameter' }, { status: 400 });
     }
 
+    console.log('[Generate API] Creating experiment record...');
     // Create experiment record
-    const experiment = await StorageService.createExperiment(prompt);
+    let experiment;
+    try {
+      experiment = await StorageService.createExperiment(prompt);
+      console.log('[Generate API] Experiment created:', experiment.id);
+    } catch (dbError: any) {
+      console.error('[Generate API] Database error creating experiment:', dbError);
+      return NextResponse.json(
+        { error: `Database error: ${dbError.message || 'Failed to create experiment'}` },
+        { status: 500 }
+      );
+    }
 
     // Generate all parameter combinations
     const combinations = generateCombinations(parameterRanges.temperature, parameterRanges.topP);
+    console.log(`[Generate API] Generated ${combinations.length} parameter combinations`);
 
     // Parallel LLM calls with error handling
+    console.log('[Generate API] Starting LLM API calls...');
     const responses = await Promise.allSettled(
-      combinations.map(async ({ temperature, topP }) => {
+      combinations.map(async ({ temperature, topP }, index) => {
         const startTime = Date.now();
+        console.log(
+          `[Generate API] Starting LLM call ${index + 1}/${combinations.length} (temp=${temperature}, topP=${topP})`
+        );
 
-        // Call OpenAI
-        const responseText = await LLMService.generate(prompt, {
-          temperature,
-          topP,
-          model: 'gpt-4o-mini',
-        });
+        try {
+          // Call OpenAI
+          const responseText = await LLMService.generate(prompt, {
+            temperature,
+            topP,
+            model: 'gpt-4o-mini',
+          });
+          console.log(`[Generate API] LLM call ${index + 1} completed, response length: ${responseText.length}`);
 
-        // Calculate metrics
-        const metrics = MetricsCalculator.calculateAll(responseText, prompt);
-        const responseTimeMs = Date.now() - startTime;
+          // Calculate metrics
+          const metrics = MetricsCalculator.calculateAll(responseText, prompt);
+          const responseTimeMs = Date.now() - startTime;
 
-        // Store response
-        return await StorageService.createResponse({
-          experimentId: experiment.id,
-          temperature,
-          topP,
-          responseText,
-          metrics,
-          responseTimeMs,
-          tokenCount: LLMService.estimateTokens(responseText),
-        });
+          // Store response
+          console.log(`[Generate API] Storing response ${index + 1}...`);
+          const storedResponse = await StorageService.createResponse({
+            experimentId: experiment.id,
+            temperature,
+            topP,
+            responseText,
+            metrics,
+            responseTimeMs,
+            tokenCount: LLMService.estimateTokens(responseText),
+          });
+          console.log(`[Generate API] Response ${index + 1} stored successfully`);
+          return storedResponse;
+        } catch (error: any) {
+          console.error(`[Generate API] Error in LLM call ${index + 1}:`, error.message);
+          throw error;
+        }
       })
     );
 
@@ -91,10 +127,15 @@ export async function POST(request: NextRequest) {
     const errors = responses.filter((r) => r.status === 'rejected');
     if (errors.length > 0) {
       console.error(
-        'Some LLM calls failed:',
-        errors.map((e) => (e as PromiseRejectedResult).reason)
+        '[Generate API] Some LLM calls failed:',
+        errors.map((e) => {
+          const reason = (e as PromiseRejectedResult).reason;
+          return reason instanceof Error ? reason.message : String(reason);
+        })
       );
     }
+
+    console.log(`[Generate API] Completed: ${successfulResponses.length}/${combinations.length} successful`);
 
     // Return results
     const result: GenerateResponse = {
@@ -109,7 +150,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error: any) {
-    console.error('Generate API error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to generate responses' }, { status: 500 });
+    console.error('[Generate API] Top-level error:', error);
+    console.error('[Generate API] Error stack:', error.stack);
+    return NextResponse.json(
+      { error: error.message || 'Failed to generate responses', details: error.toString() },
+      { status: 500 }
+    );
   }
 }
